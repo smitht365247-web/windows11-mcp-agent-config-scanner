@@ -1,18 +1,21 @@
-<#
+﻿<#
 .SYNOPSIS
     Hardened v1.0: Read-only audit of Windows 10/11 AI coding agent & MCP server JSON configs
     (Claude Desktop, Claude Code, Cursor, Windsurf, Cline, VS Code) plus Windows ODR (odr.exe)
     and Node/npx/uvx/Python runtime readiness. Never prints secret values.
 #>
-param(
-    [string]$OutputFolder = $PSScriptRoot
-)
+[CmdletBinding()]
+param([string]$OutputFolder = $PSScriptRoot)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
 
 if ($OutputFolder -match '^[A-Za-z]:$') { $OutputFolder += '\' }
-if (-not (Test-Path -LiteralPath $OutputFolder)) {
+if ([string]::IsNullOrWhiteSpace($OutputFolder)) { $OutputFolder = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).ProviderPath } }
+if (-not (Test-Path -LiteralPath $OutputFolder -PathType Container)) {
     New-Item -ItemType Directory -Path $OutputFolder -Force | Out-Null
 }
-$OutputFolder = (Resolve-Path -LiteralPath $OutputFolder).Path
+$OutputFolder = (Resolve-Path -LiteralPath $OutputFolder).ProviderPath
 
 Write-Host "Scanning Windows 11 AI coding agent & MCP config files..." -ForegroundColor Cyan
 
@@ -31,14 +34,14 @@ $totalServers = 0
 $invalidCount = 0
 
 foreach ($c in $candidates) {
-    if (Test-Path -LiteralPath $c.Path) {
+    if (Test-Path -LiteralPath $c.Path -PathType Leaf) {
         $raw = Get-Content -LiteralPath $c.Path -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
         try {
             $parsed = $raw | ConvertFrom-Json -ErrorAction Stop
             $srvCount = 0
-            if ($parsed.mcpServers) {
+            if ($parsed.PSObject.Properties['mcpServers'] -and $parsed.mcpServers) {
                 $srvCount = @($parsed.mcpServers.PSObject.Properties).Count
-            } elseif ($parsed.servers) {
+            } elseif ($parsed.PSObject.Properties['servers'] -and $parsed.servers) {
                 $srvCount = @($parsed.servers.PSObject.Properties).Count
             }
             $totalServers += $srvCount
@@ -54,11 +57,7 @@ $runtimes = @("node", "npx", "uvx", "python", "git", "odr.exe")
 $rtStatus = @()
 foreach ($rt in $runtimes) {
     $cmd = Get-Command $rt -ErrorAction SilentlyContinue
-    if ($cmd) {
-        $rtStatus += "$rt=OK"
-    } else {
-        $rtStatus += "$rt=MISSING"
-    }
+    if ($cmd) { $rtStatus += "$rt=OK" } else { $rtStatus += "$rt=MISSING" }
 }
 
 $reportPath = Join-Path $OutputFolder ("mcp_agent_audit_{0}.txt" -f (Get-Date -Format "yyyyMMdd_HHmmss"))
@@ -73,11 +72,8 @@ $lines = @(
     "------------------------------------------------------------",
     "Detected Config Files:"
 )
-if ($foundRows.Count -gt 0) {
-    $lines += $foundRows
-} else {
-    $lines += "  (No global Claude Desktop, Claude Code, Cursor, Windsurf, Cline, or VS Code MCP configs found)"
-}
+if ($foundRows.Count -gt 0) { $lines += $foundRows }
+else { $lines += "  (No global Claude Desktop, Claude Code, Cursor, Windsurf, Cline, or VS Code MCP configs found)" }
 $lines += "------------------------------------------------------------"
 $lines += "NOTE: 100% read-only audit. API keys and env secrets are never read or printed."
 
