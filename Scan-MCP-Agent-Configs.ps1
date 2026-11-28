@@ -17,6 +17,52 @@ if (-not (Test-Path -LiteralPath $OutputFolder -PathType Container)) {
 }
 $OutputFolder = (Resolve-Path -LiteralPath $OutputFolder).ProviderPath
 
+function ConvertFrom-JsoncText {
+    param([string]$InputText)
+    # Strip // and /* */ comments outside double-quoted JSON strings, then strip trailing commas
+    $sb = New-Object System.Text.StringBuilder
+    $len = $InputText.Length
+    $inStr = $false
+    $escaped = $false
+    $i = 0
+    while ($i -lt $len) {
+        $ch = $InputText[$i]
+        if ($inStr) {
+            [void]$sb.Append($ch)
+            if ($escaped) {
+                $escaped = $false
+            } elseif ($ch -eq '\') {
+                $escaped = $true
+            } elseif ($ch -eq '"') {
+                $inStr = $false
+            }
+            $i++
+            continue
+        }
+        if ($ch -eq '"') {
+            $inStr = $true
+            [void]$sb.Append($ch)
+            $i++
+            continue
+        }
+        if ($ch -eq '/' -and ($i + 1) -lt $len -and $InputText[$i + 1] -eq '/') {
+            $i += 2
+            while ($i -lt $len -and $InputText[$i] -ne "`r" -and $InputText[$i] -ne "`n") { $i++ }
+            continue
+        }
+        if ($ch -eq '/' -and ($i + 1) -lt $len -and $InputText[$i + 1] -eq '*') {
+            $i += 2
+            while (($i + 1) -lt $len -and -not ($InputText[$i] -eq '*' -and $InputText[$i + 1] -eq '/')) { $i++ }
+            $i += 2
+            continue
+        }
+        [void]$sb.Append($ch)
+        $i++
+    }
+    $clean = [regex]::Replace($sb.ToString(), ',(\s*[\}\]])', '$1')
+    return ($clean | ConvertFrom-Json -ErrorAction Stop)
+}
+
 Write-Host "Scanning Windows 11 AI coding agent & MCP config files..." -ForegroundColor Cyan
 
 $candidates = @(
@@ -49,7 +95,7 @@ foreach ($c in $candidates) {
             continue
         }
         try {
-            $parsed = $raw | ConvertFrom-Json -ErrorAction Stop
+            $parsed = ConvertFrom-JsoncText -InputText $raw
             $srvCount = 0
             if ($null -ne $parsed -and ($parsed -is [System.Management.Automation.PSCustomObject])) {
                 if ($parsed.PSObject.Properties['mcpServers'] -and $parsed.mcpServers) {
