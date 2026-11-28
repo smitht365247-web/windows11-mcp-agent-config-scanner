@@ -1,6 +1,7 @@
 @echo off
 setlocal DisableDelayedExpansion
-title Windows 11 AI Coding Agent & MCP Config Health Scanner (v1.1)
+cd /d "%~dp0"
+title Windows 11 AI Coding Agent ^& MCP Config Health Scanner (v1.1)
 
 :START
 cls
